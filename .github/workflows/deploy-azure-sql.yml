@@ -1,0 +1,80 @@
+name: Deploy Azure SQL Database
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'sql/**'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      #  Debug step (helps confirm folder exists)
+      - name: Debug repo structure
+        run: |
+          echo "Current directory:"
+          pwd
+          echo "Files in root:"
+          ls -la
+          echo "Full structure:"
+          ls -R
+
+      #  Azure login using OIDC
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      #  Install sqlcmd
+      - name: Install sqlcmd
+        run: |
+          sudo ACCEPT_EULA=Y apt-get update
+          sudo ACCEPT_EULA=Y apt-get install -y mssql-tools18 unixodbc-dev
+          echo "/opt/mssql-tools18/bin" >> $GITHUB_PATH
+
+      #  Deploy SQL scripts safely
+      - name: Deploy SQL Scripts
+        run: |
+          echo "Checking for sql directory..."
+
+          if [ ! -d "./sql" ]; then
+            echo "ERROR: sql folder not found!"
+            exit 1
+          fi
+
+          echo "sql folder found"
+
+          FILES=$(find ./sql -name "*.sql" | sort)
+
+          if [ -z "$FILES" ]; then
+            echo "No SQL files found in sql folder"
+            exit 0
+          fi
+
+          for file in $FILES
+          do
+            echo "Executing $file"
+
+            sqlcmd \
+              -S ${{ secrets.SQL_SERVER_NAME }}.database.windows.net \
+              -d ${{ secrets.SQL_DATABASE_NAME }} \
+              -U ${{ secrets.SQL_USERNAME }} \
+              -P "${{ secrets.SQL_PASSWORD }}" \
+              -N -C -b \
+              -i "$file"
+          done
