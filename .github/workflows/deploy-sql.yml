@@ -1,0 +1,68 @@
+name: Deploy Azure Synapse SQL
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      # Step 1 - Download Repository
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # Step 2 - Login to Azure
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+
+      # Step 3 - Install sqlcmd
+      - name: Install sqlcmd
+
+        run: |
+          curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
+          curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list | sudo tee /etc/apt/sources.list.d/msprod.list
+
+          sudo apt-get update
+
+          sudo ACCEPT_EULA=Y apt-get install -y mssql-tools18 unixodbc-dev
+
+          echo "/opt/mssql-tools18/bin" >> $GITHUB_PATH
+
+      # Step 4 - Verify sqlcmd
+      - name: Verify sqlcmd
+        run: sqlcmd -?
+
+      # Step 5 - Execute SQL Files
+      - name: Deploy SQL Scripts
+
+        run: |
+
+          echo "Starting deployment..."
+
+          for file in $(find sql -name "*.sql" | sort)
+
+          do
+
+            echo "--------------------------------"
+
+            echo "Executing: $file"
+
+            sqlcmd \
+              -S ${{ secrets.SYNAPSE_SERVER }} \
+              -d ${{ secrets.DATABASE_NAME }} \
+              -G \
+              -i "$file"
+
+          done
+
+          echo "Deployment completed."
